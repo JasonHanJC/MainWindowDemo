@@ -25,6 +25,12 @@ typedef enum CurrentView {
     UIView *chatView;
     UIView *chatBottomView;
     
+    UIVisualEffect *blurEffect;
+    UIVisualEffectView *visualEffectView;
+    
+    UIView *leftSideView;
+    UIView *rightSideView;
+    
     UIView *feedView;
     
     CGPoint startPoint;
@@ -37,6 +43,13 @@ typedef enum CurrentView {
     CurrentView currentView;
     
     UIImageView *dummyView;
+    
+    UIView *chatContainerView;
+    UITextView *chatInputTxtView;
+    UIButton *sendButton;
+    
+    CGFloat deltaY;
+    CGPoint originalChatContainerCenter;
 }
 @end
 
@@ -47,6 +60,9 @@ typedef enum CurrentView {
     // Do any additional setup after loading the view, typically from a nib.
     currentView = ZONE_VIEW;
 
+    blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleLight];
+    visualEffectView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
+    
     panG = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePanGesture:)];
     
     dragCloth = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handleDragClothPanGesture:)];
@@ -56,6 +72,33 @@ typedef enum CurrentView {
     
     
     [self layout];
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    
+    [self registerForKeyboardNotifications];
+}
+
+- (void)registerForKeyboardNotifications {
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(keyboardWillOpen:)
+                                                 name:UIKeyboardWillShowNotification
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(keyboardWillClose:)
+                                                 name:UIKeyboardWillHideNotification
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(keyboardDidClose:)
+                                                 name:UIKeyboardDidHideNotification
+                                               object:nil];
+//    if([[[UIDevice currentDevice] systemVersion] floatValue] >= 5.0) {
+//        [[NSNotificationCenter defaultCenter] addObserver:self
+//                                                 selector:@selector(keyboardWillChangeFrame:)
+//                                                     name:UIKeyboardWillChangeFrameNotification
+//                                                   object:nil];
+//    }
 }
 
 
@@ -83,13 +126,47 @@ typedef enum CurrentView {
     zoneView.backgroundColor = [UIColor redColor];
     zoneView.tag = ZONE_VIEW;
     
+    leftSideView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 50, viewH)];
+    leftSideView.backgroundColor = [UIColor colorWithRed:1 green:1 blue:1 alpha:0.3];
+    leftSideView.alpha = 0.0;
+    
+    rightSideView = [[UIView alloc] initWithFrame:CGRectMake(viewW - 50, 0, 50, viewH)];
+    rightSideView.backgroundColor = [UIColor colorWithRed:1 green:1 blue:1 alpha:0.3];
+    rightSideView.alpha = 0.0;
+    
+    chatContainerView = [[UIView alloc] initWithFrame:CGRectMake(0, viewH - 50, viewW, 50)];
+    chatContainerView.backgroundColor = [UIColor whiteColor];
+    
+    chatContainerView.alpha = 0.0;
+    
+    chatInputTxtView = [[UITextView alloc] initWithFrame:CGRectMake(8, 0, 200, 40)];
+    chatInputTxtView.center = CGPointMake(chatInputTxtView.center.x, 50/2.0);
+    chatInputTxtView.backgroundColor = [UIColor lightGrayColor];
+    chatInputTxtView.textColor = [UIColor blackColor];
+    
+    sendButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    sendButton.frame = CGRectMake(viewW - 8 - 50, 0, 50, 40);
+    sendButton.center = CGPointMake(sendButton.center.x, 50/2.0);
+    [sendButton setTitle:@"Send" forState:UIControlStateNormal];
+    [sendButton addTarget:self action:@selector(sendMessage) forControlEvents:UIControlEventTouchUpInside];
+    
+    [chatContainerView addSubview:chatInputTxtView];
+    [chatContainerView addSubview:sendButton];
+    
+    
     clothImageView = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"Cloth"]];
     clothImageView.contentMode = UIViewContentModeScaleAspectFit;
     clothImageView.center = zoneView.center;
     clothImageView.userInteractionEnabled = YES;
     [clothImageView addGestureRecognizer:dragCloth];
     
+
     [zoneView addSubview:clothImageView];
+    [zoneView addSubview:leftSideView];
+    [zoneView addSubview:rightSideView];
+    [zoneView addSubview:chatContainerView];
+    
+    originalChatContainerCenter = chatContainerView.center;
     
     [self.view addSubview:zoneView];
 }
@@ -191,19 +268,93 @@ typedef enum CurrentView {
     
     //NSLog(@"translation: %f, %f", translation.x, translation.y);
     //NSLog(@"velovity: %f, %f", velovity.x, velovity.y);
-
+    
     
     if (gestureRecognizer.state == UIGestureRecognizerStateBegan) {
         //startPoint = [gestureRecognizer locationInView:self.view];
         dummyView = [[UIImageView alloc] initWithImage:clothImageView.image];
         dummyView.center = clothImageView.center;
         [zoneView addSubview:dummyView];
+        [self changeAppearanceOfView:leftSideView alpha:1.0];
+        [self changeAppearanceOfView:rightSideView alpha:1.0];
     } else if (gestureRecognizer.state == UIGestureRecognizerStateChanged) {
         dummyView.center = [gestureRecognizer locationInView:self.view];
     } else if (gestureRecognizer.state == UIGestureRecognizerStateEnded) {
         [dummyView removeFromSuperview];
+        CGPoint finalRightPoint = [rightSideView convertPoint:[gestureRecognizer locationInView:self.view] fromView:rightSideView.window];
+        if ([rightSideView pointInside:finalRightPoint withEvent:nil]) {
+            NSLog(@"send to chat");
+            [chatInputTxtView becomeFirstResponder];
+        }
+        
+        CGPoint finalLeftPoint = [leftSideView convertPoint:[gestureRecognizer locationInView:self.view] fromView:leftSideView.window];
+        if ([leftSideView pointInside:finalLeftPoint withEvent:nil]) {
+            NSLog(@"send to post");
+        }
+        
+        [self changeAppearanceOfView:leftSideView alpha:0.0];
+        [self changeAppearanceOfView:rightSideView alpha:0.0];
+        
+        
     }
 }
 
+- (void)changeAppearanceOfView:(UIView *)view alpha:(CGFloat)alpha {
+    [UIView animateWithDuration:0.2 animations:^{
+        view.alpha = alpha;
+    }];
+}
+
+- (void)keyboardWillOpen:(NSNotification *)notification {
+    [UIView animateWithDuration:0.2 animations:^{
+        chatContainerView.alpha = 1.0;
+    }];
+    
+    NSDictionary *info = [notification userInfo];
+    CGRect keyboardFrame = [info[UIKeyboardFrameEndUserInfoKey] CGRectValue];
+    keyboardFrame = [self.view convertRect:keyboardFrame fromView:nil];
+    CGFloat yPosition = keyboardFrame.origin.y;
+    
+//    NSInteger height = [UIScreen mainScreen].bounds.size.height - yPosition;
+    
+    double animationDuration;
+    animationDuration = [[[notification userInfo] objectForKey:UIKeyboardAnimationDurationUserInfoKey] doubleValue];
+
+    deltaY = chatContainerView.frame.origin.y + chatContainerView.frame.size.height - yPosition;
+    
+    if (deltaY > 0) {
+        [UIView animateWithDuration:animationDuration delay:0.0 options:UIViewAnimationOptionCurveEaseInOut animations:^{
+            chatContainerView.center = CGPointMake(chatContainerView.center.x, chatContainerView.center.y - deltaY);
+        } completion:^(BOOL finished) {
+            
+        }];
+    }
+
+}
+
+- (void)keyboardWillClose:(NSNotification *)notification {
+    [UIView animateWithDuration:0.2 animations:^{
+        chatContainerView.alpha = 0.0;
+    }];
+    
+    double animationDuration;
+    animationDuration = [[[notification userInfo] objectForKey:UIKeyboardAnimationDurationUserInfoKey] doubleValue];
+
+    [UIView animateWithDuration:animationDuration delay:0.0 options:UIViewAnimationOptionCurveEaseInOut animations:^{
+        chatContainerView.center = originalChatContainerCenter;
+    } completion:^(BOOL finished) {
+        
+    }];
+
+}
+
+- (void)keyboardDidClose:(NSNotification *)notification {
+    
+}
+
+- (void)sendMessage {
+    [chatInputTxtView resignFirstResponder];
+    
+}
 
 @end
