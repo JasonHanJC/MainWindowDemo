@@ -14,8 +14,13 @@ typedef enum CurrentView {
     FEED_VIEW = 3
 }CurrentView;
 
+typedef enum TableTag {
+    SMALL_TABLE = 1,
+    LARGE_TABLE = 2
+}TableTag;
 
-@interface MainViewDemoViewController () <CAAnimationDelegate>
+
+@interface MainViewDemoViewController () <CAAnimationDelegate, UITableViewDelegate, UITableViewDataSource, UITextViewDelegate>
 {
     UIView *zoneView;
     UIView *zoneBottomView;
@@ -50,6 +55,16 @@ typedef enum CurrentView {
     
     CGFloat deltaY;
     CGPoint originalChatContainerCenter;
+    
+    UITableView *smallTable;
+    
+    UITableView *largeTable;
+    
+    NSMutableArray *fakeData;
+    NSMutableArray *repository;
+    
+    NSString *newMessage;
+    
 }
 @end
 
@@ -59,6 +74,10 @@ typedef enum CurrentView {
     [super viewDidLoad];
     // Do any additional setup after loading the view, typically from a nib.
     currentView = ZONE_VIEW;
+    
+    fakeData = [[NSMutableArray alloc] initWithObjects:@"Looks good", @"Nice", @"Try this on.",@"Looks good", @"Nice", @"Try this on.",nil];
+    
+    repository = [NSMutableArray new];
 
     blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleLight];
     visualEffectView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
@@ -78,6 +97,46 @@ typedef enum CurrentView {
     [super viewWillAppear:animated];
     
     [self registerForKeyboardNotifications];
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    
+    [self loadFakedata];
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated];
+    
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)loadFakedata {
+    
+    if (repository.count == 3) {
+        
+        NSIndexPath *indexPath = [NSIndexPath indexPathForRow:0 inSection:0];
+        [repository removeObjectAtIndex:0];
+        [smallTable beginUpdates];
+        [smallTable deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationRight];
+        [smallTable endUpdates];
+        
+    }
+    
+    [repository addObject:fakeData[[self getRandomNumberBetween:0 to:(int)(fakeData.count - 1)]]];
+    
+    NSIndexPath *indexPath = [NSIndexPath indexPathForRow:repository.count - 1 inSection:0];
+    
+    [smallTable beginUpdates];
+    [smallTable insertRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationRight];
+    [smallTable endUpdates];
+    
+    [self performSelector:@selector(loadFakedata) withObject:nil afterDelay:[self getRandomNumberBetween:1 to:4]];
+}
+
+-(int)getRandomNumberBetween:(int)from to:(int)to {
+    
+    return (int)from + arc4random() % (to-from+1);
 }
 
 - (void)registerForKeyboardNotifications {
@@ -126,12 +185,17 @@ typedef enum CurrentView {
     zoneView.backgroundColor = [UIColor redColor];
     zoneView.tag = ZONE_VIEW;
     
+    UIImageView *bg = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"WechatIMG10"]];
+    bg.frame = CGRectMake(0, 0, viewW, viewH);
+    bg.contentMode = UIViewContentModeScaleAspectFit;
+    [zoneView addSubview:bg];
+    
     leftSideView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 50, viewH)];
-    leftSideView.backgroundColor = [UIColor colorWithRed:1 green:1 blue:1 alpha:0.3];
+    leftSideView.backgroundColor = [UIColor colorWithRed:1 green:1 blue:1 alpha:0.6];
     leftSideView.alpha = 0.0;
     
     rightSideView = [[UIView alloc] initWithFrame:CGRectMake(viewW - 50, 0, 50, viewH)];
-    rightSideView.backgroundColor = [UIColor colorWithRed:1 green:1 blue:1 alpha:0.3];
+    rightSideView.backgroundColor = [UIColor colorWithRed:1 green:1 blue:1 alpha:0.6];
     rightSideView.alpha = 0.0;
     
     chatContainerView = [[UIView alloc] initWithFrame:CGRectMake(0, viewH - 50, viewW, 50)];
@@ -143,6 +207,7 @@ typedef enum CurrentView {
     chatInputTxtView.center = CGPointMake(chatInputTxtView.center.x, 50/2.0);
     chatInputTxtView.backgroundColor = [UIColor lightGrayColor];
     chatInputTxtView.textColor = [UIColor blackColor];
+    chatInputTxtView.delegate = self;
     
     sendButton = [UIButton buttonWithType:UIButtonTypeSystem];
     sendButton.frame = CGRectMake(viewW - 8 - 50, 0, 50, 40);
@@ -160,15 +225,44 @@ typedef enum CurrentView {
     clothImageView.userInteractionEnabled = YES;
     [clothImageView addGestureRecognizer:dragCloth];
     
+    //[clothImageView setTranslatesAutoresizingMaskIntoConstraints:NO];
+    
+    smallTable = [[UITableView alloc] initWithFrame:CGRectMake(viewW - 8 - 200, 60, 200, 100) style:UITableViewStylePlain];
+    smallTable.backgroundColor = [UIColor clearColor];
+    smallTable.allowsSelection = NO;
+    smallTable.bounces = NO;
+    smallTable.separatorStyle = UITableViewCellSeparatorStyleNone;
+    smallTable.delegate = self;
+    smallTable.dataSource = self;
+    smallTable.contentInset = UIEdgeInsetsZero;
+    smallTable.tag = SMALL_TABLE;
+    smallTable.userInteractionEnabled = YES;
+    [smallTable setTableFooterView:[UIView new]];
 
+    UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(tapSmallTabel)];
+    
+    [smallTable addGestureRecognizer:tap];
+    
     [zoneView addSubview:clothImageView];
+    [zoneView addSubview:smallTable];
     [zoneView addSubview:leftSideView];
     [zoneView addSubview:rightSideView];
     [zoneView addSubview:chatContainerView];
     
+    [smallTable reloadData];
+    
     originalChatContainerCenter = chatContainerView.center;
     
     [self.view addSubview:zoneView];
+    
+    //NSArray *test = [NSLayoutConstraint constraintsWithVisualFormat:@"H:|-20-[v0]" options:NSLayoutFormatAlignAllCenterY metrics:nil views:@{@"v0":clothImageView}];
+    
+    //NSArray *test1 = [NSLayoutConstraint constraintsWithVisualFormat:@"V:|-20-[v0]" options:NSLayoutFormatDirectionLeadingToTrailing metrics:nil views:@{@"v0":clothImageView}];
+    
+//    [clothImageView.superview addConstraints:test];
+//    [clothImageView.superview addConstraints:test1];
+    
+    //[NSLayoutConstraint activateConstraints:test];
 }
 
 - (void)layoutChatViewW:(CGFloat)viewW viewH:(CGFloat)viewH {
@@ -273,22 +367,39 @@ typedef enum CurrentView {
     if (gestureRecognizer.state == UIGestureRecognizerStateBegan) {
         //startPoint = [gestureRecognizer locationInView:self.view];
         dummyView = [[UIImageView alloc] initWithImage:clothImageView.image];
+        dummyView.transform = CGAffineTransformMakeScale(0.8, 0.8);
         dummyView.center = clothImageView.center;
         [zoneView addSubview:dummyView];
-        [self changeAppearanceOfView:leftSideView alpha:1.0];
-        [self changeAppearanceOfView:rightSideView alpha:1.0];
+        [self changeAppearanceOfView:leftSideView alpha:0.5];
+        [self changeAppearanceOfView:rightSideView alpha:0.5];
     } else if (gestureRecognizer.state == UIGestureRecognizerStateChanged) {
         dummyView.center = [gestureRecognizer locationInView:self.view];
+        
+        CGPoint finalRightPoint = [rightSideView convertPoint:[gestureRecognizer locationInView:self.view] fromView:rightSideView.window];
+        if ([rightSideView pointInside:finalRightPoint withEvent:nil]) {
+            rightSideView.alpha = 0.7;
+        } else {
+            rightSideView.alpha = 0.5;
+        }
+        
+        CGPoint finalLeftPoint = [leftSideView convertPoint:[gestureRecognizer locationInView:self.view] fromView:leftSideView.window];
+        if ([leftSideView pointInside:finalLeftPoint withEvent:nil]) {
+            leftSideView.alpha = 0.7;
+        } else {
+            leftSideView.alpha = 0.5;
+        }
     } else if (gestureRecognizer.state == UIGestureRecognizerStateEnded) {
         [dummyView removeFromSuperview];
         CGPoint finalRightPoint = [rightSideView convertPoint:[gestureRecognizer locationInView:self.view] fromView:rightSideView.window];
         if ([rightSideView pointInside:finalRightPoint withEvent:nil]) {
             NSLog(@"send to chat");
+            rightSideView.alpha = 0.5;
             [chatInputTxtView becomeFirstResponder];
         }
         
         CGPoint finalLeftPoint = [leftSideView convertPoint:[gestureRecognizer locationInView:self.view] fromView:leftSideView.window];
         if ([leftSideView pointInside:finalLeftPoint withEvent:nil]) {
+            leftSideView.alpha = 0.5;
             NSLog(@"send to post");
         }
         
@@ -332,6 +443,10 @@ typedef enum CurrentView {
 
 }
 
+- (void)tapSmallTabel {
+    [chatInputTxtView becomeFirstResponder];
+}
+
 - (void)keyboardWillClose:(NSNotification *)notification {
     [UIView animateWithDuration:0.2 animations:^{
         chatContainerView.alpha = 0.0;
@@ -352,9 +467,73 @@ typedef enum CurrentView {
     
 }
 
+- (void)textViewDidEndEditing:(UITextView *)textView {
+    newMessage = textView.text;
+    NSLog(@"message: %@", newMessage);
+    [self addNewMessage:newMessage];
+}
+
 - (void)sendMessage {
     [chatInputTxtView resignFirstResponder];
+}
+
+
+- (void)addNewMessage:(NSString *)message {
     
+    if (repository.count == 3) {
+        
+        NSIndexPath *indexPath = [NSIndexPath indexPathForRow:0 inSection:0];
+        [repository removeObjectAtIndex:0];
+        [smallTable beginUpdates];
+        [smallTable deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationRight];
+        [smallTable endUpdates];
+        
+    }
+    
+    [repository addObject:message];
+    
+    NSIndexPath *indexPath = [NSIndexPath indexPathForRow:repository.count - 1 inSection:0];
+    
+    [smallTable beginUpdates];
+    [smallTable insertRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationLeft];
+    [smallTable endUpdates];
+}
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
+    return 1;
+}
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    if (tableView.tag == SMALL_TABLE) {
+        return repository.count;
+    } else if (tableView.tag == LARGE_TABLE) {
+        return fakeData.count;
+    }
+    
+    return 0;
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
+    return 100 / 3.0;
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    if (tableView.tag == SMALL_TABLE) {
+        NSString *identifier = @"smallTable";
+        UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:identifier];
+        
+        if (cell == nil) {
+            cell = [[UITableViewCell alloc]initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:identifier];
+        }
+        
+        cell.layer.cornerRadius = 8;
+        cell.layer.masksToBounds = YES;
+        cell.backgroundColor = [UIColor whiteColor];
+        cell.textLabel.text = repository[indexPath.row];
+        return cell;
+    }
+    
+    return nil;
 }
 
 @end
